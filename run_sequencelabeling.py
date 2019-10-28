@@ -230,7 +230,7 @@ class DataProcessor(object):
 
 
 
-class WeaverProcessor(DataProcessor):
+class TestProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
@@ -591,6 +591,7 @@ def birnn_layer(inputs, num_units=768, cell_type='lstm', num_layers=1, dropout_k
 def project_layer(inputs, num_labels):
     #logits = tf.layers.dense(inputs, num_labels, activation=None, kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
     logits = tf.layers.dense(inputs, num_labels, activation=None)
+    logits = tf.identity(logits, name='logits')
     return logits
 
 def crf_loss():
@@ -631,6 +632,8 @@ def inference(model, num_labels, is_training, labels, input_mask, use_crf=True, 
     
         loss = tf.reduce_mean(-log_likelihood)
         pred_labels, viterbi_score = tf.contrib.crf.crf_decode(logits, transition_params, mask2len)
+        pred_labels = tf.identity(pred_labels, name='crf_pred_labels')
+        viterbi_score = tf.identity(viterbi_score, name='crf_probs')
         print(loss)
         print(pred_labels)
         print(viterbi_score)
@@ -644,12 +647,13 @@ def inference(model, num_labels, is_training, labels, input_mask, use_crf=True, 
         total_size = tf.reduce_sum(mask) + 1e-12
         loss /= total_size 
 
-        probabilities = tf.nn.softmax(logits, axis=-1)
-        pred_labels = tf.argmax(probabilities, axis=-1)
+        probabilities = tf.nn.softmax(logits, axis=-1, name='probs')
+        pred_labels = tf.argmax(probabilities, axis=-1, name='pred_labels')
         pred_labels = tf.cast(pred_labels, dtype=tf.int32)
 
     correct_pred = tf.equal(labels, pred_labels)
     acc = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name='acc')
+    loss = tf.identity(loss, name='loss')
 
     return (loss, logits, acc, pred_labels) 
 
@@ -660,15 +664,15 @@ def do_train_step():
     pass
 
 
-def get_tf_record_iterator(examples, output_dir, label_map, tokenizer, max_seq_length, batch_size, num_steps, name='train', shuffle=False):
+def get_tf_record_iterator(examples, output_dir, label_map, tokenizer, max_seq_length, batch_size, num_steps, name='train', shuffle=False, epochs=1):
     input_file = os.path.join(output_dir, "%s.tf_record"%name)
     file_based_convert_examples_to_features(examples, label_map,
                                         max_seq_length, tokenizer, input_file)
-    tf.logging.info("***** Running %s step *****"%name)
+    tf.logging.info("***** Running %s step *****" % name)
     tf.logging.info("    Num examples = %d", len(examples))
     tf.logging.info("    Batch size = %d", batch_size)
     tf.logging.info("    Num steps = %d", num_steps)
-    data = read_data_from_tfrecord(input_file, FLAGS.max_seq_length, FLAGS.train_batch_size, True, int(FLAGS.num_train_epochs))
+    data = read_data_from_tfrecord(input_file, FLAGS.max_seq_length, batch_size, is_training=shuffle, epochs=epochs)
     iterator = data.make_one_shot_iterator()
     batch_data_op = iterator.get_next() 
     return batch_data_op
@@ -761,11 +765,10 @@ def main(_):
     tf.logging.set_verbosity(tf.logging.INFO)
 
     processors = {
-            "test": WeaverProcessor,
+            "test": TestProcessor,
     }
 
-    tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
-                                                                                                FLAGS.init_checkpoint)
+    tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case, FLAGS.init_checkpoint)
 
     if not FLAGS.do_train and not FLAGS.do_eval and not FLAGS.do_predict:
         raise ValueError(
@@ -856,7 +859,8 @@ def main(_):
                                                      FLAGS.train_batch_size, 
                                                      num_train_steps,
                                                      name='train',
-                                                     shuffle=True)
+                                                     shuffle=True,
+                                                     epochs=int(FLAGS.num_train_epochs))
 
         
 
@@ -893,7 +897,7 @@ def main(_):
 
                 if eval_acc_value > best_acc_value:
                     best_acc_value = eval_acc_value
-                    saver.save(sess, FLAGS.output_dir+'/checkpoints/model', global_step=train_step)
+                    saver.save(sess, FLAGS.output_dir + '/checkpoints/model', global_step=train_step)
 
             
 
