@@ -50,49 +50,6 @@ class NERHttpServer(tornado.web.RequestHandler):
     def head(self):
         self.write('OK')
 
-    def online_extract_features(self):
-        query = self.data['query']
-        logging.info('extracted query:' + query)
-        result = {}
-        if 'uuid_code' not in self.data:
-            features = self.pred_instance.extract_features(query)
-        else:
-            uuid_code = self.data['uuid_code']
-            features = self.pred_instance.extract_features(query, uuid_code)
-        result['features'] = [float(feature) for feature in features]
-        return result
-    
-    def online_ranking(self):
-        start_time = datetime.datetime.now()
-        query = self.data['query']
-        cand_pool = self.data['candidates']
-        logging.info('ranking query:' + query)
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('candidates param cost' + str(cost))
-        sorted_indices, sim_scores = self.pred_instance.ranking(query, cand_pool)
-        
-        sim_scores = list(sim_scores)
-        sorted_indices = list(sorted_indices)
-        top_sorted_indices = sorted_indices[: 5]
-        logging.info(type(sim_scores))
-        logging.info(type(sorted_indices))
-
-        result = []
-        start_time = end_time
-        for idx in top_sorted_indices:
-            title = cand_pool[idx]['text']
-            name = cand_pool[idx]['userId']
-            score = sim_scores[idx]
-            item = {}
-            item['title'] = title
-            item['name'] = name
-            item['score'] = score
-            result.append(item)
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('wrap result cost' + str(cost))
-        return result
             
     def prepare(self):
         start_time = datetime.datetime.now()
@@ -111,18 +68,13 @@ class NERHttpServer(tornado.web.RequestHandler):
         err_dict = {}
         try:
             start_time = datetime.datetime.now()
+            text = self.data['text']
+            response = self.pred_instance.evaluate(text)
+
             end_time = datetime.datetime.now()
             cost = (end_time - start_time).total_seconds() * 1000
-            logging.info('check param cost' + str(cost))
-            start_time = end_time
-            method_type = self.data['method']
-            end_time = datetime.datetime.now()
-            cost = (end_time - start_time).total_seconds() * 1000
-            logging.info('get method param and query param cost' + str(cost))
-            if method_type == 'extract':
-                response = self.online_extract_features()
-            else:
-                response = self.online_ranking()
+            logging.info('evaluating cost:' + str(cost))
+
             response_json = json.dumps(response, ensure_ascii=False)
             self.write(response_json)
 
@@ -144,18 +96,17 @@ if __name__ == '__main__':
 
 
     config = {}
+
     config['model_dir'] = MODEL_DIR
-    config['model_checkpoints_dir'] = MODEL_DIR + '/checkpoints/'
-    config['max_seq_length'] = 32
-    config['top_k'] = 3
-    config['code_file'] = CODE_FILE
-    config['label_map_file'] = LABEL_MAP_FILE
+    config['model_checkpoints_dir'] = MODEL_DIR + '/checkpoints'
+    config['max_seq_length'] = 64
+    config['label_map_file'] = MODEL_DIR + '/label_map'
     config['vocab_file'] = MODEL_DIR + '/vocab.txt'
     config['model_pb_path'] = MODEL_DIR + '/checkpoints/frozen_model.pb'
-    config['memory_file'] = MODEL_DIR + '/memory.tsv'
+
 
     pred_instance = Evaluator(config)
-    pred_instance.extract_features('班车报表')
+    pred_instance.evaluate('我明天去万达')
 
 
     application = tornado.web.Application([
