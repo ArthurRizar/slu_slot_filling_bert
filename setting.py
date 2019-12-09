@@ -21,9 +21,9 @@ MODEL_DIR = BASE_DIR + '/output'
 
 
 #bert server
-TF_SERVING_REST_PORT = 6378
-TF_SERVING_CLIENT_PORT = 6379
-TF_SERVING_SIGNATRUE_NAME = 'predict_text'
+TF_SERVING_REST_PORT=6378
+TF_SERVING_CLIENT_PORT=6379
+TF_SERVING_SIGNATRUE_NAME='predict_text'
 
 
 
@@ -31,10 +31,14 @@ TF_SERVING_SIGNATRUE_NAME = 'predict_text'
 
 #files path
 #STOPWORD_FILE = DATA_DIR + '/stopword_data/stop_words'
-#STOPWORD_FILE = DATA_DIR + '/stopword_data/stop_symbol'
+STOPWORD_FILE = DATA_DIR + '/stopword_data/stop_symbol'
 LABEL_FILE = MODEL_DIR + '/labels.tsv'
 LABEL_MAP_FILE = MODEL_DIR + '/label_map'
 #CODE_FILE = MODEL_DIR + '/labelcode'
+
+
+
+
 
 
 
