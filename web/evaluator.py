@@ -19,6 +19,7 @@ sys.path.append('../')
 from preprocess import bert_data_utils
 from preprocess import dataloader
 from preprocess import tokenization
+from preprocess import ner_utils
 from setting import *
 from tensorflow.contrib import learn
 
@@ -62,7 +63,7 @@ class Evaluator(object):
 
 
         #init label dict and processors
-        label2idx, idx2label = bert_data_utils.read_label_map_file(self.label_map_file)
+        label2idx, idx2label = bert_data_utils.read_ner_label_map_file(self.label_map_file)
         self.idx2label = idx2label
         self.label2idx = label2idx
         
@@ -72,7 +73,7 @@ class Evaluator(object):
 
     
         #init stop set
-        #self.stop_set = dataloader.get_stopwords_set(STOPWORD_FILE)
+        self.stop_set = dataloader.get_stopwords_set(STOPWORD_FILE)
 
         #use default graph
         self.graph = tf.get_default_graph()
@@ -98,10 +99,9 @@ class Evaluator(object):
 
 
         #tensors we want to evaluate
-        self.pred_labels_tensor = self.graph.get_operation_by_name('loss/pred_labels').outputs[0]
-        self.probabilities_tensor = self.graph.get_operation_by_name('loss/probs').outputs[0]
-        self.logits_tensor = self.graph.get_operation_by_name('loss/logits').outputs[0]
-        self.sentence_features_tensor = self.graph.get_operation_by_name('sentence_features').outputs[0]
+        self.pred_labels_tensor = self.graph.get_operation_by_name('crf_pred_labels').outputs[0]
+        self.probabilities_tensor = self.graph.get_operation_by_name('crf_probs').outputs[0]
+        self.logits_tensor = self.graph.get_operation_by_name('logits').outputs[0]
 
         #self.uuid2features = self.get_memory()
    
@@ -122,52 +122,6 @@ class Evaluator(object):
         self.sess.close()
 
     
-    def extract_features(self, text, uuid=None):
-        if uuid and uuid in self.uuid2features:
-            return self.uuid2features[uuid]
-        input_ids, input_mask, segment_ids = self.trans_text2ids(text)
-        feed_dict = {         
-                self.input_ids_tensor: input_ids,
-                self.input_mask_tensor: input_mask,
-                self.segment_ids_tensor: segment_ids,
-                self.is_training_tensor: False}
-        batch_sentence_features = self.sess.run(self.sentence_features_tensor, feed_dict)
-        
-        sentence_features = batch_sentence_features[0] 
-        return sentence_features
-
-    def ranking(self, text, cand_pool):
-        start_time = datetime.datetime.now()
-        cand_features = [cand['features'] for cand in cand_pool]
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('prepare cost' + str(cost))
-
-        input_ids, input_mask, segment_ids = self.trans_text2ids(text)
-        start_time = end_time
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('text to ids cost' + str(cost))
-
-        cur_features = self.extract_features(text)
-        start_time = end_time
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('extract features cost' + str(cost))
-
-        cur_features = np.reshape(cur_features, [1, -1])
-        sim_scores = cosine(cur_features, cand_features)
-        start_time = end_time                        
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('cosine cost' + str(cost))
-
-        sorted_ids = np.argsort(-sim_scores)
-        start_time = end_time                        
-        end_time = datetime.datetime.now()
-        cost = (end_time - start_time).total_seconds() * 1000
-        logging.info('sort cost' + str(cost))
-        return sorted_ids, sim_scores
 
 
     def evaluate(self, text):
@@ -182,29 +136,27 @@ class Evaluator(object):
                                                                         self.probabilities_tensor, 
                                                                         self.logits_tensor],
                                                                        feed_dict)
-        #print(cur_pred_labels)
-        #print(cur_probabilities)
-        
-        cur_probabilities = sigmoid(cur_logits)
-        best_label = self.idx2label[cur_pred_labels[0]]
-        
-        all_ids = np.argsort(-cur_probabilities, 1)
-        top_k_ids = all_ids[:, :self.top_k_num][0]
+        print(cur_pred_labels)
+        print(cur_probabilities)
+        tags = [self.idx2label[t].upper() for t in cur_pred_labels[0]]
+        print(tags, len(tags))
+        tags = tags[1: len(text) + 1]
+        print(text, len(text))
+        print(tags, len(tags))
+        tags = ner_utils.bert_result_to_json(text, tags) 
+        print(text, len(text))
+        print(tags, len(tags))
 
-        top_k_labels = [self.idx2label[idx] for idx in top_k_ids]
-        top_k_probs = cur_probabilities[0][top_k_ids]
-        top_k_probs = norm(top_k_probs)
-        top_k_code = [self.label2code[label] for label in top_k_labels]
-
-        return zip(top_k_labels, top_k_code, top_k_probs) 
+        return tags 
 
 
     def trans_text2ids(self, text):
         if text[-1] in self.stop_set:
             text = text[: -1]
         example = bert_data_utils.InputExample(guid='1', text_a=text)
-        seq_length = min(self.max_seq_length, len(text) + 2)
-        feature = bert_data_utils.convert_single_example(1, example, self.label2idx,
+        #seq_length = min(self.max_seq_length, len(text) + 2)
+        seq_length = self.max_seq_length
+        feature = bert_data_utils.convert_online_example(example,
                                                 seq_length, self.tokenizer)
         input_ids = [feature.input_ids]
         input_mask = [feature.input_mask]
@@ -227,7 +179,6 @@ if __name__ == '__main__':
     config['model_pb_path'] = MODEL_DIR + '/checkpoints/frozen_model.pb'
     config['memory_file'] = MODEL_DIR + '/memory.tsv'
     '''
-    MODEL_DIR = '../output'
     config['model_dir'] = MODEL_DIR 
     config['model_checkpoints_dir'] = MODEL_DIR + '/checkpoints'
     config['max_seq_length'] = 64
@@ -239,8 +190,10 @@ if __name__ == '__main__':
 
 
     pred_instance = Evaluator(config)
-    rs = pred_instance.extract_features('明天我要去万达')
+    rs = pred_instance.evaluate('明天我要去万达')
     print(rs)
     print(np.shape(rs))
-
+    
+    rs = pred_instance.evaluate('马思文要跟老板去上海的田亩公司')
+    print(rs)
 

@@ -56,7 +56,7 @@ def freeze_graph(input_checkpoint_dir, output_graph):
  
     # 指定输出的节点名称,该节点名称必须是原模型中存在的节点
     # 直接用最后输出的节点，可以在tensorboard中查找到，tensorboard只能在linux中使用
-    output_node_names = ['input_ids', 'input_mask', 'segment_ids', 'is_training', 'pred_labels', 'probs', 'logits']
+    output_node_names = ['input_ids', 'input_mask', 'segment_ids', 'is_training', 'crf_pred_labels', 'crf_probs', 'logits']
     cp_file = tf.train.latest_checkpoint(input_checkpoint_dir)
 
     graph = tf.Graph()
@@ -76,55 +76,6 @@ def freeze_graph(input_checkpoint_dir, output_graph):
             print("%d ops in the final graph." % len(output_graph_def.node)) #得到当前图有几个操作节点
 
 
-def tf_serving_model_from_ckpt(checkpoint_path, tf_serving_model_path):
-
-    cp_file = tf.train.latest_checkpoint(checkpoint_path)
-    saver = tf.train.import_meta_graph('{}.meta'.format(cp_file))
-    
-    graph = tf.get_default_graph()
-
-    if tf.gfile.Exists(tf_serving_model_path):
-        tf.gfile.DeleteRecursively(tf_serving_model_path)
-
-    builder = tf.saved_model.builder.SavedModelBuilder(tf_serving_model_path)
-    with tf.Session() as sess:
-        saver.restore(sess, cp_file) #恢复图并得到数据
-        input_ids = graph.get_operation_by_name('input_ids').outputs[0]
-        input_mask = graph.get_operation_by_name('input_mask').outputs[0]
-        segment_ids = graph.get_operation_by_name('segment_ids').outputs[0]
-        is_training = graph.get_operation_by_name('is_training').outputs[0]
-
-        probs =  graph.get_operation_by_name('loss/probs').outputs[0]
-        pred_labels = graph.get_operation_by_name('loss/pred_labels').outputs[0]
-        sentence_features = graph.get_operation_by_name('sentence_features').outputs[0]
-
-        tensor_info_input_ids = tf.saved_model.utils.build_tensor_info(input_ids)
-        tensor_info_input_mask = tf.saved_model.utils.build_tensor_info(input_mask)
-        tensor_info_segment_ids = tf.saved_model.utils.build_tensor_info(segment_ids)
-        tensor_info_is_training = tf.saved_model.utils.build_tensor_info(is_training)
-
-        tensor_info_probs = tf.saved_model.utils.build_tensor_info(probs)
-        tensor_info_pred_labels = tf.saved_model.utils.build_tensor_info(pred_labels)
-        tensor_info_sentence_features = tf.saved_model.utils.build_tensor_info(sentence_features)
-
-        prediction_signature = (
-            tf.saved_model.signature_def_utils.build_signature_def(
-                inputs = {'input_ids': tensor_info_input_ids,
-                        'input_mask': tensor_info_input_mask,
-                        'segment_ids': tensor_info_segment_ids,
-                        'is_training': tensor_info_is_training},
-                outputs = {'probs': tensor_info_probs,
-                        'pred_labels': tensor_info_pred_labels,
-                        'sentence_features': tensor_info_sentence_features},
-            method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
-
-        builder.add_meta_graph_and_variables(
-            sess, [tf.saved_model.tag_constants.SERVING],
-            signature_def_map={
-                'predict_text': prediction_signature,
-            },
-            main_op=tf.tables_initializer()) 
-    builder.save()
 
 def tf_serving_model(pb_path, tf_serving_model_path):
     restore_graph_def = tf.GraphDef()
@@ -145,9 +96,8 @@ def tf_serving_model(pb_path, tf_serving_model_path):
         segment_ids = graph.get_operation_by_name('segment_ids').outputs[0]
         is_training = graph.get_operation_by_name('is_training').outputs[0]
 
-        probs =  graph.get_operation_by_name('loss/probs').outputs[0]
-        pred_labels = graph.get_operation_by_name('loss/pred_labels').outputs[0]
-        sentence_features = graph.get_operation_by_name('sentence_features').outputs[0]
+        probs =  graph.get_operation_by_name('crf_probs').outputs[0]
+        pred_labels = graph.get_operation_by_name('crf_pred_labels').outputs[0]
 
         tensor_info_input_ids = tf.saved_model.utils.build_tensor_info(input_ids)
         tensor_info_input_mask = tf.saved_model.utils.build_tensor_info(input_mask)
@@ -156,18 +106,16 @@ def tf_serving_model(pb_path, tf_serving_model_path):
         
         tensor_info_probs = tf.saved_model.utils.build_tensor_info(probs)
         tensor_info_pred_labels = tf.saved_model.utils.build_tensor_info(pred_labels)
-        tensor_info_sentence_features = tf.saved_model.utils.build_tensor_info(sentence_features)
 
         prediction_signature = (
             tf.saved_model.signature_def_utils.build_signature_def(
-            inputs={'input_ids': tensor_info_input_ids,
-                    'input_mask': tensor_info_input_mask,
-                    'segment_ids': tensor_info_segment_ids,
-                    'is_training': tensor_info_is_training},
-            outputs={'probs': tensor_info_probs,
-                     'pred_labels': tensor_info_pred_labels,
-                     'sentence_features': tensor_info_sentence_features},
-            method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)) 
+                inputs={'input_ids': tensor_info_input_ids,
+                        'input_mask': tensor_info_input_mask,
+                        'segment_ids': tensor_info_segment_ids,
+                        'is_training': tensor_info_is_training},
+                outputs={'probs': tensor_info_probs,
+                         'pred_labels': tensor_info_pred_labels},
+                method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)) 
 
         builder.add_meta_graph_and_variables(
             sess, [tf.saved_model.tag_constants.SERVING],
@@ -187,7 +135,6 @@ if __name__ == '__main__':
     tf_serving_model_path = MODEL_DIR + '/checkpoints/' + tf_serving_model_version
  
     freeze_graph(checkpoint_path, pb_path)
-    #tf_serving_model_from_ckpt(checkpoint_path, tf_serving_model_path)
     tf_serving_model(pb_path, tf_serving_model_path)
 
 

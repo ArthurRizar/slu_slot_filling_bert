@@ -17,7 +17,7 @@ python run_sequencelabeling.py --task_name=test  \
                               --vocab_file=$BERT_BASE_DIR/vocab.txt \
                               --max_seq_length=64  \
                               --do_train=true \
-                              --num_train_epochs=10 \
+                              --num_train_epochs=3 \
                               --learning_rate=5e-5  \
                               --train_batch_size=64 
 

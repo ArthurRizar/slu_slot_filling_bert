@@ -44,13 +44,13 @@ class InputFeatures(object):
                  input_ids,
                  input_mask,
                  segment_ids,
-                 label_id=None,
+                 label_ids=None,
                  is_real_example=True):
 
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
-        self.label_id = label_id
+        self.label_ids = label_ids
         self.is_real_example = is_real_example
 
 
@@ -84,12 +84,12 @@ def read_bert_labels_file(label_file):
     return label2idx, idx2label
 
 
-def read_label_map_file(label_map_file):
+def read_ner_label_map_file(label_map_file):
     label_map = {}
     idx2label = {}
     with codecs.open(label_map_file, 'r', 'utf8') as fr:
         for line in fr:
-            line = line.strip().lower()
+            line = line.strip().upper()
             line_info = line.split('\t')
             idx = int(line_info[0])
             label = line_info[1]
@@ -114,62 +114,146 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
             tokens_b.pop()
 
 
-def convert_single_example(ex_index, example, label_map, max_seq_length, tokenizer, is_predict=True):
-    tokens_a = tokenizer.tokenize(example.text_a)
-    tokens_b = None
-    if example.text_b:
-        tokens_b = tokenizer.tokenize(example.text_b)
-
-    if tokens_b:
-        # Modifies `tokens_a` and `tokens_b` in place so that the total
-        # length is less than the specified length.
-        # Account for [CLS], [SEP], [SEP] with "- 3"
-        _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
-        pass
-    else:
-        # Account for [CLS] and [SEP] with "- 2"
-        if len(tokens_a) > max_seq_length - 2:
-            tokens_a = tokens_a[0:(max_seq_length - 2)]
-
+def convert_text_to_tokens(text, max_seq_length, tokenizer):
+    sizes = []
     tokens = []
+    org_char = []
+    for index, word in enumerate(text_list):
+        token = tokenizer.tokenize(word)
+        tokens.extend(token)
+        sizes.append(len(token))
+
+    print(tokens)
+
+def convert_online_example(example, max_seq_length, tokenizer):
+    text_list = example.text_a
+    tokens = []
+    for index, word in enumerate(text_list):
+        token = tokenizer.tokenize(word)
+        tokens.extend(token)
+
+    if len(tokens) > max_seq_length - 2:
+        tokens = tokens[: max_seq_length - 2]
+
+    final_tokens = []
     segment_ids = []
-    tokens.append("[CLS]")
+
+    final_tokens.append("[CLS]")
     segment_ids.append(0)
-    for token in tokens_a:
-        tokens.append(token)
+    for index, token in enumerate(tokens):
+        final_tokens.append(token)
+        if example.label:
+            label = labels[index]
         segment_ids.append(0)
-    tokens.append("[SEP]")
+    final_tokens.append("[SEP]")
     segment_ids.append(0)
 
-    if tokens_b:
-        for token in tokens_b:
-            tokens.append(token)
-            segment_ids.append(1)
-        tokens.append("[SEP]")
-        segment_ids.append(1)
+    input_ids = tokenizer.convert_tokens_to_ids(final_tokens)
 
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
     input_mask = [1] * len(input_ids)
 
     # Zero-pad up to the sequence length.
     while len(input_ids) < max_seq_length:
-    #while len(input_ids) < len(example.text_a) + 2:
         input_ids.append(0)
         input_mask.append(0)
         segment_ids.append(0)
+        final_tokens.append('[PAD]')
 
     assert len(input_ids) == max_seq_length
     assert len(input_mask) == max_seq_length
     assert len(segment_ids) == max_seq_length
-    #input_mask = [1] * max_seq_length
+    assert len(final_tokens) == max_seq_length
 
-    label_id = None
-    if example.label is not None:
-        label_id =  label_map[example.label]
 
-    if ex_index < 3 and not is_predict:
+    print("*** Example ***")
+    print("guid: %s" % (example.guid))
+    print("tokens: %s" % " ".join(
+                [tokenization.printable_text(x) for x in tokens]))
+    print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+    print("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+    print("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+
+    feature = InputFeatures(
+            input_ids=input_ids,
+            input_mask=input_mask,
+            segment_ids=segment_ids,
+            is_real_example=True)
+    return feature
+
+
+def convert_single_example(ex_index, example, label_map, max_seq_length, tokenizer, is_predict=True):
+    print(label_map)
+
+    text_list = example.text_a.split(' ')
+    if example.label:
+        label_list = example.label.split(' ')
+    
+    tokens = []
+    labels = []
+    for index, word in enumerate(text_list):
+        token = tokenizer.tokenize(word)
+        tokens.extend(token)
+        
+        if example.label:
+            label = labes_list[index]
+            for i, _ in enumerate(token):
+                if i == 0:
+                    labels.append(label)
+                else:
+                    labels.append('[WordPiece]')
+
+    print(tokens)
+    if len(tokens) > max_seq_length - 2:
+        tokens = tokens[: max_seq_length - 2]
+
+    if example.label and len(tokens) > max_seq_length - 2:
+        labels = labels[: max_seq_length - 2]
+
+    final_tokens = []
+    segment_ids = []
+    label_ids = []
+
+    final_tokens.append("[CLS]")
+    label_ids.append(label_map['[CLS]'])
+    segment_ids.append(0)
+    for index, token in enumerate(tokens):
+        final_tokens.append(token)
+        if example.label:
+            label = labels[index]
+            label_ids.append(label_map[label])
+        segment_ids.append(0)
+    final_tokens.append("[SEP]")
+    label_ids.append(label_map['[SEP]'])
+    #label_ids.append(label_map['O'])
+    segment_ids.append(0)
+
+    input_ids = tokenizer.convert_tokens_to_ids(final_tokens)
+
+    # The mask has 1 for real tokens and 0 for padding tokens. Only real
+    # tokens are attended to.
+    input_mask = [1] * len(input_ids)
+
+    # Zero-pad up to the sequence length.
+    while len(input_ids) < max_seq_length:
+        input_ids.append(0)
+        input_mask.append(0)
+        segment_ids.append(0)
+        if example.label:
+            label_ids.append(label_map['[PAD]'])
+        final_tokens.append('[PAD]')
+
+    assert len(input_ids) == max_seq_length
+    assert len(input_mask) == max_seq_length
+    assert len(segment_ids) == max_seq_length
+    assert len(final_tokens) == max_seq_length
+
+    if example.label:
+        assert len(label_ids) == max_seq_length
+
+    #print(example.label)
+    if ex_index < 3:
         print("*** Example ***")
         print("guid: %s" % (example.guid))
         print("tokens: %s" % " ".join(
@@ -177,18 +261,16 @@ def convert_single_example(ex_index, example, label_map, max_seq_length, tokeniz
         print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
         print("input_mask: %s" % " ".join([str(x) for x in input_mask]))
         print("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-        print("label: %s" % (example.label))
-        print("raw_text: %s" % (example.text_a))
-
-
+        print("label_ids: %s " % " ".join([str(x) for x in label_ids]))
 
     feature = InputFeatures(
             input_ids=input_ids,
             input_mask=input_mask,
             segment_ids=segment_ids,
-            label_id=label_id,
+            label_ids=label_ids,
             is_real_example=True)
     return feature
+
 
 
 
