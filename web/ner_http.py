@@ -8,7 +8,7 @@
 
 import os
 import sys
-import ujson as json
+import json
 import tornado.web
 import tornado.ioloop
 
@@ -96,7 +96,6 @@ if __name__ == '__main__':
 
 
     config = {}
-
     config['model_dir'] = MODEL_DIR
     config['model_checkpoints_dir'] = MODEL_DIR + '/checkpoints'
     config['max_seq_length'] = 64
@@ -113,6 +112,6 @@ if __name__ == '__main__':
             (r"/ner", NERHttpServer,
             dict(pred_instance=pred_instance))
         ])
-    application.listen(6379)
+    application.listen(HTTP_SERVER_PORT)
    
     tornado.ioloop.IOLoop.instance().start()

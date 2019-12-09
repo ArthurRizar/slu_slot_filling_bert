@@ -8,7 +8,7 @@
 
 import os
 import sys
-import ujson as json
+import json
 import tornado.web
 import tornado.ioloop
 
@@ -31,7 +31,7 @@ import evaluator
 from multiprocessing import Pool, TimeoutError
 
 from setting import *
-from evaluator import Evaluator
+from tf_serving_evaluator import Evaluator
 from preprocess import dataloader
 from common.segment.segment_client import SegClient
 
