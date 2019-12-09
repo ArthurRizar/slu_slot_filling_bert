@@ -24,6 +24,7 @@ import os
 import random
 import datetime
 import codecs
+import shutil
 import numpy as np
 import tensorflow as tf
 
@@ -278,8 +279,6 @@ class TestProcessor(DataProcessor):
 def convert_single_example(ex_index, example, label_map, max_seq_length,
                                                      tokenizer):
     """Converts a single `InputExample` into a single `InputFeatures`."""
-
-
     text_list = example.text_a.split(' ')
     label_list = example.label.split(' ')
     tokens = []
@@ -291,14 +290,11 @@ def convert_single_example(ex_index, example, label_map, max_seq_length,
             if i == 0:
                 labels.append(label)
             else:
-                labels.append('X')
+                labels.append('[WordPiece]')
 
     if len(tokens) > max_seq_length - 2:
-        tokens = tokens[: max_seq_length-2]
-        labels = labels[: max_seq_length-2]
-    #print(tokens)
-    #print(labels)
-    #print(label_map)
+        tokens = tokens[: max_seq_length - 2]
+        labels = labels[: max_seq_length - 2]
 
     final_tokens = []
     segment_ids = []
@@ -316,10 +312,6 @@ def convert_single_example(ex_index, example, label_map, max_seq_length,
     label_ids.append(label_map['[SEP]'])
     #label_ids.append(label_map['O'])
     segment_ids.append(0)
-
-    #print(final_tokens, len(final_tokens))
-    #print(label_ids, len(label_ids))
-    #print(segment_ids, len(segment_ids))
 
     input_ids = tokenizer.convert_tokens_to_ids(final_tokens)
 
@@ -793,7 +785,8 @@ def main(_):
 
     label_list = processor.get_labels()
     label_map = get_and_save_label_map(label_list, FLAGS.output_dir)
-
+    
+    shutil.copy(FLAGS.vocab_file, FLAGS.output_dir)
 
     tokenizer = tokenization.FullTokenizer(
             vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)

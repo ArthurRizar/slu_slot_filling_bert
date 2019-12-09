@@ -63,7 +63,7 @@ class Evaluator(object):
 
 
         #init label dict and processors
-        label2idx, idx2label = bert_data_utils.read_label_map_file(self.label_map_file)
+        label2idx, idx2label = bert_data_utils.read_ner_label_map_file(self.label_map_file)
         self.idx2label = idx2label
         self.label2idx = label2idx
         
@@ -73,7 +73,7 @@ class Evaluator(object):
 
     
         #init stop set
-        #self.stop_set = dataloader.get_stopwords_set(STOPWORD_FILE)
+        self.stop_set = dataloader.get_stopwords_set(STOPWORD_FILE)
 
         #use default graph
         self.graph = tf.get_default_graph()
@@ -139,17 +139,24 @@ class Evaluator(object):
         print(cur_pred_labels)
         print(cur_probabilities)
         tags = [self.idx2label[t].upper() for t in cur_pred_labels[0]]
+        print(tags, len(tags))
         tags = tags[1: len(text) + 1]
-        tags = ner_utils.result_to_json(text, tags) 
+        print(text, len(text))
+        print(tags, len(tags))
+        tags = ner_utils.bert_result_to_json(text, tags) 
+        print(text, len(text))
+        print(tags, len(tags))
 
         return tags 
 
 
     def trans_text2ids(self, text):
+        if text[-1] in self.stop_set:
+            text = text[: -1]
         example = bert_data_utils.InputExample(guid='1', text_a=text)
         #seq_length = min(self.max_seq_length, len(text) + 2)
         seq_length = self.max_seq_length
-        feature = bert_data_utils.convert_single_example(1, example, self.label2idx,
+        feature = bert_data_utils.convert_online_example(example,
                                                 seq_length, self.tokenizer)
         input_ids = [feature.input_ids]
         input_mask = [feature.input_mask]
